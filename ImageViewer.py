@@ -1,4 +1,13 @@
 import sys
+import os
+# Fix Qt plugin path issue
+if hasattr(sys, 'frozen'):
+    os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = os.path.join(sys._MEIPASS, 'PySide6', 'plugins', 'platforms')
+else:
+    import PySide6
+    plugin_path = os.path.join(os.path.dirname(PySide6.__file__), 'plugins', 'platforms')
+    if os.path.exists(plugin_path):
+        os.environ['QT_QPA_PLATFORM_PLUGIN_PATH'] = plugin_path
 import numpy as np
 import csv
 from PySide6.QtWidgets import (
