@@ -309,6 +309,13 @@ class ImageViewer(QMainWindow):
 
                 # Update status
                 self.status_bar.showMessage(f"Loaded: {file_path}")
+                import os
+                file_name = os.path.basename(file_path)
+                if image_data.ndim == 3:
+                    dims = f"{image_data.shape[1]} x {image_data.shape[2]} x {image_data.shape[0]}"
+                else:
+                    dims = f"{image_data.shape[0]} x {image_data.shape[1]}"
+                self.setWindowTitle(f"Micro_GUI - [{dims}] - {file_name}")
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load image:\n{str(e)}")
