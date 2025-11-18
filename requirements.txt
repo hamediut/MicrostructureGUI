@@ -1,0 +1,20 @@
+# Core GUI Framework
+PySide6>=6.5.0
+
+# Scientific Computing
+numpy>=1.24.0
+numba>=0.57.0
+
+# Image Processing
+Pillow>=10.0.0
+
+# Visualization
+matplotlib>=3.7.0
+
+# Development Dependencies (optional)
+# Uncomment for development
+# pytest>=7.4.0
+# pytest-qt>=4.2.0
+# black>=23.0.0
+# flake8>=6.0.0
+# mypy>=1.4.0
