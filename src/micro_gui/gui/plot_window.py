@@ -32,6 +32,12 @@ class PlotWindow(QMainWindow):
         Args:
             s2_values: NumPy array of S2 values to display
             parent: Parent window (optional)
+
+        Parent is ImageViewer. Why have a parent?
+        - Plot window appears on top of main window
+        - When main window closes, plot windows close too
+        - Better memory management
+
         """
         super().__init__(parent)
 
@@ -42,9 +48,10 @@ class PlotWindow(QMainWindow):
         # Create matplotlib figure
         self.fig, self.ax = plt.subplots(figsize=(8, 6))
         self.ax.plot(s2_values, linewidth=2)
-        self.ax.set_xlabel('Distance (r)', fontsize=12)
-        self.ax.set_ylabel('S2 Value', fontsize=12)
-        self.ax.set_title('SMDS (S2) Correlation Function', fontsize=14, fontweight='bold')
+        self.ax.set_xlabel('Distance (r)', fontsize= 16)
+        self.ax.tick_params(axis='both', which='major', labelsize=12)
+        self.ax.set_ylabel('$S_{2}$', fontsize= 16)
+        self.ax.set_title('Two-point Correlation Function ($S_{2}$)', fontsize=14, fontweight='bold')
         self.ax.grid(True, alpha=0.3)
 
         # Create canvas widget
@@ -73,14 +80,17 @@ class PlotWindow(QMainWindow):
 
     def save_plot(self):
         """Save the plot as PNG or JPEG image file."""
+        # Open file dialog to select save location and format
+        # It returns a tuple (file_path, selected_filter). selected_filter is the file type chosen by user.
         file_path, _ = QFileDialog.getSaveFileName(
-            self,
+            self, # parent (QWidget or QMainWindow)
             "Save Plot",
-            "",
+            "",# initial folder or suggested filename
+            # selected filters (allowed file types)
             "PNG Image (*.png);;JPEG Image (*.jpg *.jpeg);;PDF Document (*.pdf);;All Files (*)"
         )
 
-        if file_path:
+        if file_path: # If user didn't cancel and selected a file path
             try:
                 self.fig.savefig(file_path, dpi=300, bbox_inches='tight')
                 QMessageBox.information(self, "Success", f"Plot saved to:\n{file_path}")
@@ -103,10 +113,10 @@ class PlotWindow(QMainWindow):
                     file_path += '.csv'
 
                 with open(file_path, 'w', newline='', encoding='utf-8') as csvfile:
-                    writer = csv.writer(csvfile)
-                    writer.writerow(['distance_r', 's2_value'])
+                    writer = csv.writer(csvfile, delimiter=';')
+                    writer.writerow(['r', 's2'])
                     for i, value in enumerate(self.s2_values):
-                        writer.writerow([i, value])
+                        writer.writerow([i, np.round(value, decimals=4)])
 
                 QMessageBox.information(self, "Success", f"Data exported to:\n{file_path}")
             except Exception as e:
