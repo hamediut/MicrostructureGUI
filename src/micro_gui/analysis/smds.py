@@ -4,10 +4,13 @@ SMDS (Second-order Moment Density Statistics) calculation module.
 This module provides functions for calculating two-point correlation functions
 and SMDS values for binary microstructure images in 2D and 3D.
 """
-
+import os
 import numpy as np
 from numba import jit
 from typing import Tuple
+
+import pandas as pd
+from typing import List, Dict, Optional
 
 
 @jit(nopython=True)
@@ -194,3 +197,125 @@ def calculate_s2_3d(images: np.ndarray, directional: bool = False) -> np.ndarray
     ) / 3
 
     return average
+
+def cal_fn( polytope:np.ndarray, n:int)->np.ndarray:
+    """This function calculates scaled autocovariance function from Pn function.
+    polytope:polytope function it can be two point correlation function (s2) or 
+    higher order functions such as p3, p4, etc
+    n: order of polytope e.g., n =2 for two-point correlation (s_2), n= 3 for p3h and p3v"""
+    numerator = polytope - polytope[0] ** n
+    denominator = polytope[0] - polytope[0] ** n
+    fn_r = numerator/ denominator
+    return fn_r
+
+def calculate_s2_4d(images: np.ndarray):
+    """
+    Calculate average two-point correlation for a 4D stacks ( a stacks of 3D volumes, not time series).
+
+    This function computes S2 values for 4D image data by calculating
+    correlations in all four principal directions and averaging them.
+
+    Args:
+        images: 4D binary image array (values should be 0 and 1)
+            Shape: (stack_number, depth, height, width)
+    Returns:
+    df_s2_grouped: a dataframe containing  average S2 values for all 3D volumes in the 4D stack.
+    df_f2_grouped: a dataframe containing  average F2 values for all 3D volumes in the 4D stack.
+    
+    """
+    Nr = min(images.shape[1:])//2
+    s2_list = []
+    f2_list = []
+
+    for i in range(images.shape[0]):
+        
+        two_point_covariance = {}
+        for j, direc in enumerate(["x", "y", "z"]) :
+            two_point_direc = two_point_correlation3D(images[i], j, var = 1)
+            two_point_covariance[direc] = two_point_direc
+    
+        direc_covariances = {}
+        for direc in ["x", "y", "z"]:
+            direc_covariances[direc] = np.mean(np.mean(two_point_covariance[direc], axis=0), axis=0)[: Nr]
+        s2_average = (direc_covariances['x'] + direc_covariances['y'] + direc_covariances['z'])/3
+        s2_list.append(s2_average)
+        f2_list.append(cal_fn(s2_average, n = 2))
+    # s2--------------------
+    df_s2_list = []
+    for k in np.arange(0, len(s2_list)):
+        df_s2_list.append(pd.DataFrame(s2_list[k], columns = ['s2']))
+    df_s2 = pd.concat(df_s2_list)
+    df_s2['r'] = df_s2.index
+    # df_s2_grouped = df_s2.groupby(['r']).agg( {'s2': [np.mean, np.std, np.size] } )
+    df_s2_grouped = df_s2.groupby(['r']).agg( {'s2': ['mean', 'std', 'size'] } )
+    
+    # f2--------------------
+    df_f2_list = []
+    for k in np.arange(0, len(f2_list)):
+        df_f2_list.append(pd.DataFrame(f2_list[k], columns = ['f2']))
+    df_f2 = pd.concat(df_f2_list)
+    df_f2['r'] = df_f2.index
+    # df_f2_grouped = df_f2.groupby(['r']).agg( {'f2': [np.mean, np.std, np.size] } )
+    df_f2_grouped = df_f2.groupby(['r']).agg( {'f2': ['mean', 'std', 'size'] } )
+
+    return df_s2_grouped, df_f2_grouped
+
+def REV(image: np.ndarray,
+            img_size_list: List[int],
+            n_rand_samples: int)-> Dict[str, pd.DataFrame]:
+    
+    """
+    This function receives a 3D (XCT) image and calculates average S2 and F2 for the whole image and a number of random subvolumes.
+    These average correlation functions can then be analysed to determine the REV for the image.
+    Parameters
+    ----------
+    image: np.ndarray
+    This is the 3D image read as numpy array to do REV analysis on.
+
+    img_size_list: List
+    list of image sizes to calculate correlation functions. These sizes should be smaller than the whole image.
+
+    n_rand_samples: int
+    number of random images used for calculating REV. use 30 or more.
+
+    Returns
+    --------
+    It returns two dictionary: one for s2 (s2_3d_dict) and one for f2 (f2_3d_dict)
+    """
+    seed =33
+    np.random.seed(seed)
+    x_max, y_max, z_max = image.shape[:]
+
+    s2_3d_dict = {}
+    f2_3d_dict = {}
+
+    for image_size in img_size_list:
+
+        all_crops = np.zeros((n_rand_samples, image_size, image_size, image_size), dtype = np.uint8)
+        for i in range(n_rand_samples):
+
+            x = np.random.randint (0, x_max - image_size)
+            y = np.random.randint (0, y_max - image_size)
+            z = np.random.randint (0, z_max - image_size)
+
+            crop_image = image[x:x + image_size, y:y + image_size, z:z + image_size]
+            all_crops[i] = crop_image
+            
+        df_s2, df_f2 = calculate_s2_4d(all_crops)
+        s2_3d_dict[f'sub_{image_size}'] = df_s2
+        f2_3d_dict[f'sub_{image_size}'] = df_f2
+
+        # print(f'{image_size} done !')
+    
+    print('Calculating S2 and F2 for the whole volume ...')
+    # calculate S2 and f2 for the whole volume
+    s2_avg_original  = calculate_s2_3d(image)
+    f2_avg_original = cal_fn(s2_avg_original, n = 2)
+
+    s2_3d_dict['original'] = s2_avg_original
+    f2_3d_dict['original'] = f2_avg_original
+
+        
+    return s2_3d_dict, f2_3d_dict
+
+

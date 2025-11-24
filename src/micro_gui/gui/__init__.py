@@ -8,5 +8,6 @@ image viewer, plot windows, and custom widgets.
 from .image_viewer import ImageViewer
 from .plot_window import PlotWindow
 from .widgets import ImageDisplayWidget
+from .rev_plot_window import RevPlotWindow
 
-__all__ = ['ImageViewer', 'PlotWindow', 'ImageDisplayWidget']
+__all__ = ['ImageViewer', 'PlotWindow', 'ImageDisplayWidget', 'RevPlotWindow']

@@ -16,7 +16,8 @@ from PIL import Image
 
 from .widgets import ImageDisplayWidget
 from .plot_window import PlotWindow
-from ..analysis.smds import calculate_s2, calculate_s2_3d
+from .rev_plot_window import RevPlotWindow
+from ..analysis.smds import calculate_s2, calculate_s2_3d, REV
 
 
 class CalculationThread(QThread):
@@ -53,6 +54,34 @@ class CalculationThread(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+class REVCalculationThread(QThread):
+    """
+
+    Thread for running REV calculation in background.
+    """
+    finished = Signal(object, object) # Emits (s2_dict, f2_dict)
+    error = Signal(str)
+    progress = Signal(str)  # Optional: to show progress
+
+    def __init__(self, image_data: np.ndarray,
+                  img_size_list: List[int] = [32, 64, 128],
+                  n_rand_samples = 10):
+        super().__init__()
+        self.image_data = image_data
+        self.img_size_list = img_size_list
+        self.n_rand_samples = n_rand_samples
+
+    def run(self):
+        """Run the REV calculation in a separate thread."""
+
+        try:
+            s2_dict, f2_dict = REV(self.image_data,
+                                   self.img_size_list,
+                                   self.n_rand_samples
+                                   )
+            self.finished.emit(s2_dict, f2_dict)
+        except Exception as e:
+            self.error.emit(str(e))
 
 class ImageViewer(QMainWindow):
     """
@@ -151,6 +180,14 @@ class ImageViewer(QMainWindow):
         smds_action.setShortcut("Ctrl+S")
         smds_action.setStatusTip("Calculate SMDS (S2) from the current image")
         smds_action.triggered.connect(self.calculate_smds)
+
+        # REV menu
+        rev_menu = menubar.addMenu("&REV")
+        rev_action = rev_menu.addAction("Calculate &REV")
+        rev_action.setShortcut("Ctrl+R")
+        rev_action.setStatusTip("Calculate REV from the current image")
+        rev_action.triggered.connect(self.calculate_rev)  # Placeholder, implement
+        rev_action
 
     def _create_status_bar(self):
         """Create the status bar with progress indicator."""
@@ -369,6 +406,74 @@ class ImageViewer(QMainWindow):
         """
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "Calculation Error", f"Error calculating SMDS:\n{error_msg}")
+        self.status_bar.showMessage(f"Error: {error_msg}")
+
+    ## calculate_rev placeholder
+    def calculate_rev(self):
+        """Calculate REV and display results."""
+        if self.current_image_data is None:
+            QMessageBox.warning(self, "No Image", "Please open an image first.")
+            return
+        
+        # Check if 3D
+        if self.current_image_data.ndim != 3:
+            QMessageBox.warning(
+                self,
+                "3D image required",
+                "REV calculation requires a 3D image volume."
+            )
+            return
+        
+        # Define subvolume sizes (you might want a dialog for this later)
+        # These should be smaller than the image dimensions
+        min_dim = min(self.current_image_data.shape)
+        img_size_list = [32, 64, 128, 256]  # Example sizes
+        # Filter out sizes larger than image
+        img_size_list = [s for s in img_size_list if s < min_dim]
+        n_rand_samples = 30  # Example number of random samples
+
+        # Show progress bar in status bar
+        self.progress_bar.setVisible(True)
+        self.status_bar.showMessage("Calculating REV... (this may take a while)")
+
+        # Process events to ensure UI updates
+        QApplication.processEvents()
+
+        # Create and start calculation thread
+        self.rev_thread = REVCalculationThread(
+            self.current_image_data,
+            img_size_list,
+            n_rand_samples
+        )
+        self.rev_thread.finished.connect(self.on_rev_finished)
+        self.rev_thread.error.connect(self.on_rev_error)
+        self.rev_thread.start()
+
+    def on_rev_finished(self, s2_dict: dict, f2_dict: dict):
+        """
+        Handle completion of REV calculation.
+
+        Args:
+            s2_dict: Dictionary of S2 values for different subvolume sizes
+            f2_dict: Dictionary of F2 values for different subvolume sizes
+        """
+        self.progress_bar.setVisible(False)
+
+        # Create a new window to display the REV plot
+        rev_window = RevPlotWindow(s2_dict, f2_dict, self)
+        self.plot_windows.append(rev_window)
+        rev_window.show()
+
+        self.status_bar.showMessage("REV calculation completed")
+    def on_rev_error(self, error_msg: str):
+        """
+        Handle error during REV calculation.
+
+        Args:
+            error_msg: Error message
+        """
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "REV Error", f"Error calculating REV:\n{error_msg}")
         self.status_bar.showMessage(f"Error: {error_msg}")
 
     def resizeEvent(self, event):
