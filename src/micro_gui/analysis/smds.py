@@ -307,13 +307,13 @@ def REV(image: np.ndarray,
 
         # print(f'{image_size} done !')
     
-    # print('Calculating S2 and F2 for the whole volume ...')
-    # # calculate S2 and f2 for the whole volume
-    # s2_avg_original  = calculate_s2_3d(image)
-    # f2_avg_original = cal_fn(s2_avg_original, n = 2)
+    print('Calculating S2 and F2 for the whole volume ...')
+    # calculate S2 and f2 for the whole volume
+    s2_avg_original  = calculate_s2_3d(image)
+    f2_avg_original = cal_fn(s2_avg_original, n = 2)
 
-    # s2_3d_dict['original'] = s2_avg_original
-    # f2_3d_dict['original'] = f2_avg_original
+    s2_3d_dict['original'] = s2_avg_original
+    f2_3d_dict['original'] = f2_avg_original
 
         
     return s2_3d_dict, f2_3d_dict
