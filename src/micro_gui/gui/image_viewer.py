@@ -6,7 +6,7 @@ import numpy as np
 from typing import Optional, List
 
 from PySide6.QtWidgets import (
-    QMainWindow, QLabel, QFileDialog, QScrollArea, QStatusBar,
+    QMainWindow, QLabel, QFileDialog, QScrollArea, QStatusBar, QDialog,
     QSlider, QVBoxLayout, QWidget, QMessageBox, QProgressBar, QApplication
 )
 from PySide6.QtGui import QPixmap, QImage
@@ -18,6 +18,7 @@ from .widgets import ImageDisplayWidget
 from .plot_window import PlotWindow
 from .rev_plot_window import RevPlotWindow
 from ..analysis.smds import calculate_s2, calculate_s2_3d, REV
+from .rev_settings_dialog import REVSettingsDialog
 
 
 class CalculationThread(QThread):
@@ -424,18 +425,27 @@ class ImageViewer(QMainWindow):
             )
             return
         
-        # Define subvolume sizes (you might want a dialog for this later)
-        # These should be smaller than the image dimensions
+        # Get maximum allowed size for subvolumes
         min_dim = min(self.current_image_data.shape)
-        img_size_list = [32, 64, 128, 256]  # Example sizes
-        # Filter out sizes larger than image
-        img_size_list = [s for s in img_size_list if s < min_dim]
-        n_rand_samples = 30  # Example number of random samples
+        # Show settings dialog
+        dialog = REVSettingsDialog(min_dim, self)
+
+        if dialog.exec() != QDialog.Accepted:
+            return  # User cancelled
+        
+        img_size_list, n_rand_samples = dialog.get_values()
+
+        # # These should be smaller than the image dimensions
+        # min_dim = min(self.current_image_data.shape)
+        # img_size_list = [32, 64, 128, 256]  # Example sizes
+        # # Filter out sizes larger than image
+        # img_size_list = [s for s in img_size_list if s < min_dim]
+        # n_rand_samples = 30  # Example number of random samples
 
         # Show progress bar in status bar
         self.progress_bar.setVisible(True)
-        self.status_bar.showMessage("Calculating REV... (this may take a while)")
-
+        self.status_bar.showMessage(f"Calculating REV with sizes {img_size_list}, {n_rand_samples} samples...")
+        
         # Process events to ensure UI updates
         QApplication.processEvents()
 
