@@ -26,7 +26,7 @@ class REVSettingsDialog(QDialog):
     - Number of random samples
     """
      
-     def __init__(self, max_size, parent=None):
+     def __init__(self, max_size, calc_name = "REV",parent=None):
           
           """
           Initialize the dialog.
@@ -44,7 +44,7 @@ class REVSettingsDialog(QDialog):
           self.n_rand_samples = None # Will store user input
 
           # Set up the dialog
-          self.setWindowTitle("REV Calculation Settings")
+          self.setWindowTitle(F"{calc_name} Calculation Settings")
           self.setModal(True) # Block interaction with main window, blocks main window, User MUST respond before using main window.
           self.setMinimumWidth(400) 
 
