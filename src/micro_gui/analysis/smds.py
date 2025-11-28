@@ -135,13 +135,15 @@ def calculate_s2(image_data: np.ndarray) -> np.ndarray:
         >>> s2 = calculate_s2(img)
         >>> print(s2.shape)  # Will be approximately (50,)
     """
+    # Take average of directions; use half of the image size in the smallest dimension
+    Nr = min(image_data.shape) // 2
+
     # S2 in x-direction
     two_pt_dim0 = two_point_correlation(image_data, dim=0, var=1)
     # S2 in y-direction
     two_pt_dim1 = two_point_correlation(image_data, dim=1, var=1)
 
-    # Take average of directions; use half linear size assuming equal dimension sizes
-    Nr = two_pt_dim0.shape[0] // 2
+    
 
     S2_x = np.average(two_pt_dim1, axis=0)[:Nr]
     S2_y = np.average(two_pt_dim0, axis=0)[:Nr]
@@ -317,3 +319,126 @@ def REV(image: np.ndarray,
 
         
     return s2_3d_dict, f2_3d_dict
+
+
+## Funnctions for 2D RES analysis
+
+def calculate_two_point_list(images:np.ndarray) -> List[np.ndarray]:
+    """
+    This function calculates average two-point correlations (s2 and fn) from n_imgs of images
+    and returns a list of all of them.
+    Parameters:
+    images: np.ndarray of shape (n_imgs, img_size, mg_size)
+    """
+    #Take average of directions; use half linear size assuming equal dimension sizes
+    Nr = min(images.shape)//2
+
+    s2_list = []
+    f2_list = []
+    
+    for i in range(images.shape[0]):
+        # 1) convert each image in the batch to microstructure
+        # 2) calculate the requested polytope function including scaled version
+        # 3) append the results to the empty list above
+        
+        two_pt_dim0 = two_point_correlation(images[i], dim = 0, var = 1) #S2 in x-direction
+        # print(type(two_pt_dim0), two_pt_dim0.shape)
+        two_pt_dim1 = two_point_correlation(images[i], dim = 1, var = 1) #S2 in y-direction
+        # print(type(two_pt_dim1), two_pt_dim1.shape)
+        
+
+        S2_x = np.average(two_pt_dim1, axis=0)[:Nr]
+        S2_y = np.average(two_pt_dim0, axis=0)[:Nr]
+        S2_average = ((S2_x + S2_y)/2)[:Nr]
+        
+        s2_list.append(S2_average)
+        
+        # autoscaled covriance---------------------------------------
+        # f_average = (S2_average - S2_average[0]**2)/S2_average[0]/(1 - S2_average[0])
+        f_average = cal_fn(S2_average, n= 2)
+        f2_list.append(f_average)
+        
+    return s2_list, f2_list
+
+
+def list_to_df_two_point(s2_list:List[np.ndarray],
+                         f2_list:Optional[List[np.ndarray]] = None
+                         )-> pd.DataFrame:
+    
+    df_list = [pd.DataFrame(s2, columns = ['s2'] ) for s2 in s2_list]
+    df = pd.concat(df_list)
+    df['r'] = df.index
+    df_grouped = df.groupby( ['r'] ).agg( {'s2': ['mean', 'std', 'size'] } )
+
+    if f2_list is not None:
+            
+        df_f2_list = [pd.DataFrame(f2, columns = ['f2'] ) for f2 in f2_list]
+        df_f2 = pd.concat(df_f2_list)
+        df_f2['r'] = df_f2.index
+        df_fn_grouped = df_f2.groupby( ['r'] ).agg( {'f2': ['mean', 'std', 'size'] } ) 
+
+        return df_grouped, df_fn_grouped
+    else:
+        return df_grouped
+    
+
+def RES(image: np.ndarray,
+            img_size_list: List[int],
+            n_rand_samples: int)-> Dict[str, pd.DataFrame]:
+    
+    """
+    This function receives a 2D binary image and calculates average S2 and F2 for the whole image and a number of random crops.
+    These average correlation functions can then be analysed to determine the RES for the image.
+    Parameters
+    ----------
+    image: np.ndarray
+    This is the 2D binary image read as numpy array to do RES analysis on.
+
+    img_size_list: List
+    list of image sizes to calculate correlation functions. These sizes should be smaller than the whole image.
+
+    n_rand_samples: int
+    number of random images used for calculating REV. use 30 or more.
+
+    Returns
+    --------
+    It returns two dictionary: one for s2 (s2_dict) and one for f2 (f2_dict)
+"""
+    seed =33
+    np.random.seed(seed)
+    x_max, y_max = image.shape[:]
+    
+    s2_dict = {}
+    f2_dict = {}
+
+
+    for image_size in img_size_list:
+
+        all_crops = np.zeros((n_rand_samples, image_size, image_size), dtype = np.uint8)
+        for i in range(n_rand_samples):
+
+            x = np.random.randint (0, x_max - image_size)
+            y = np.random.randint (0, y_max - image_size)
+
+            crop_image = image[x:x + image_size, y:y + image_size]
+            all_crops[i] = crop_image
+            
+        s2_list, f2_list = calculate_two_point_list(all_crops)
+        
+        s2_df, f2_df = list_to_df_two_point(s2_list, f2_list)
+
+
+        s2_dict[f'sub_{image_size}'] = s2_df
+        f2_dict[f'sub_{image_size}'] = f2_df
+
+        print(f'Image of size {image_size} done !')
+
+    print('Calculating S2 and F2 for the whole volume ...')
+    # calculate S2 and f2 for the whole volume
+    s2_avg_original  = calculate_s2(image)
+    f2_avg_original = cal_fn(s2_avg_original, n = 2)
+
+    s2_dict['original'] = s2_avg_original
+    f2_dict['original'] = f2_avg_original
+        
+    return s2_dict, f2_dict
