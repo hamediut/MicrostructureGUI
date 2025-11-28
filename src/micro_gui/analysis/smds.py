@@ -317,5 +317,3 @@ def REV(image: np.ndarray,
 
         
     return s2_3d_dict, f2_3d_dict
-
-
