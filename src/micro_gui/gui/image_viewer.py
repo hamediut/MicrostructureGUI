@@ -17,7 +17,7 @@ from PIL import Image
 from .widgets import ImageDisplayWidget
 from .plot_window import PlotWindow
 from .rev_plot_window import RevPlotWindow
-from ..analysis.smds import calculate_s2, calculate_s2_3d, REV
+from ..analysis.smds import RES, calculate_s2, calculate_s2_3d, REV, RES
 from .rev_settings_dialog import REVSettingsDialog
 
 
@@ -71,15 +71,30 @@ class REVCalculationThread(QThread):
         self.image_data = image_data
         self.img_size_list = img_size_list
         self.n_rand_samples = n_rand_samples
+        self.calculation_type = 'REV'  # Default, will be updated in run()
 
     def run(self):
-        """Run the REV calculation in a separate thread."""
-
+        """Run REV or RES calculation in background thread."""
+        
         try:
-            s2_dict, f2_dict = REV(self.image_data,
-                                   self.img_size_list,
-                                   self.n_rand_samples
-                                   )
+            # check if image is 2D or 3D
+            if self.image_data.ndim == 2:
+                 # 2D image - calculate RES
+                 s2_dict, f2_dict = RES(self.image_data,
+                                        self.img_size_list,
+                                       self.n_rand_samples
+                                       )
+                 self.calculation_type = "RES"
+            elif self.image_data.ndim == 3:
+                # 3D image - calculate REV
+                s2_dict, f2_dict = REV(self.image_data,
+                                       self.img_size_list,
+                                       self.n_rand_samples
+                                       )
+                self.calculation_type = "REV"
+            else:
+                raise ValueError("Image data must be 2D or 3D for REV/RES calculation.")
+
             self.finished.emit(s2_dict, f2_dict)
         except Exception as e:
             self.error.emit(str(e))
@@ -183,8 +198,8 @@ class ImageViewer(QMainWindow):
         smds_action.triggered.connect(self.calculate_smds)
 
         # REV menu
-        rev_menu = menubar.addMenu("&REV")
-        rev_action = rev_menu.addAction("Calculate &REV")
+        rev_menu = menubar.addMenu("&REV/RES")
+        rev_action = rev_menu.addAction("Calculate &REV/RES")
         rev_action.setShortcut("Ctrl+R")
         rev_action.setStatusTip("Calculate REV from the current image")
         rev_action.triggered.connect(self.calculate_rev)  # Placeholder, implement
@@ -411,24 +426,30 @@ class ImageViewer(QMainWindow):
 
     ## calculate_rev placeholder
     def calculate_rev(self):
-        """Calculate REV and display results."""
+        """Calculate REV/RES from current image and display results."""
         if self.current_image_data is None:
             QMessageBox.warning(self, "No Image", "Please open an image first.")
             return
         
-        # Check if 3D
-        if self.current_image_data.ndim != 3:
+        #  Get image dimensions for dialog
+        if self.current_image_data.ndim == 2:
+            max_size = min(self.current_image_data.shape)
+            calc_name = "RES (2D)"
+        elif self.current_image_data.ndim == 3:
+            max_size = min(self.current_image_data.shape)
+            calc_name = "REV (3D)"
+        else:
             QMessageBox.warning(
                 self,
-                "3D image required",
-                "REV calculation requires a 3D image volume."
+                "Invalid Image",
+                f"Image must be either 2D or 3D, got {self.current_image_data.ndim}D."
             )
             return
         
         # Get maximum allowed size for subvolumes
-        min_dim = min(self.current_image_data.shape)
+        
         # Show settings dialog
-        dialog = REVSettingsDialog(min_dim, self)
+        dialog = REVSettingsDialog(max_size, calc_name, self)
 
         if dialog.exec() != QDialog.Accepted:
             return  # User cancelled
@@ -444,7 +465,7 @@ class ImageViewer(QMainWindow):
 
         # Show progress bar in status bar
         self.progress_bar.setVisible(True)
-        self.status_bar.showMessage(f"Calculating REV with sizes {img_size_list}, {n_rand_samples} samples...")
+        self.status_bar.showMessage(f"Calculating {calc_name} with sizes {img_size_list}, {n_rand_samples} samples...")
         
         # Process events to ensure UI updates
         QApplication.processEvents()
@@ -461,20 +482,23 @@ class ImageViewer(QMainWindow):
 
     def on_rev_finished(self, s2_dict: dict, f2_dict: dict):
         """
-        Handle completion of REV calculation.
+        Handle completion of REV/RES calculation.
 
         Args:
             s2_dict: Dictionary of S2 values for different subvolume sizes
             f2_dict: Dictionary of F2 values for different subvolume sizes
         """
+        # Get calculation type from thread
+        calc_type = self.rev_thread.calculation_type
+
         self.progress_bar.setVisible(False)
 
         # Create a new window to display the REV plot
-        rev_window = RevPlotWindow(s2_dict, f2_dict, self)
+        rev_window = RevPlotWindow(s2_dict, f2_dict, calc_type, self)
         self.plot_windows.append(rev_window)
         rev_window.show()
 
-        self.status_bar.showMessage("REV calculation completed")
+        self.status_bar.showMessage(f"{calc_type} calculation completed")
     def on_rev_error(self, error_msg: str):
         """
         Handle error during REV calculation.

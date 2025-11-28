@@ -18,14 +18,15 @@ class RevPlotWindow(QMainWindow):
     to help determine the REV.
     """
 
-    def __init__(self, s2_dict, f2_dict, parent = None):
+    def __init__(self, s2_dict, f2_dict, calc_type="REV", parent = None):
         super().__init__(parent)
 
-        self.setWindowTitle("REV Analysis Results")
+        self.setWindowTitle(f"{calc_type} Analysis Results")
         self.setGeometry(150, 150, 1000, 700)
 
         self.s2_dict = s2_dict
         self.f2_dict = f2_dict
+        self.calc_type = calc_type
 
         # Create tab widget to show S2 and F2 separately
         self.tabs = QTabWidget() # we add self.tabs to access it later to check which tab is currently active
@@ -69,7 +70,7 @@ class RevPlotWindow(QMainWindow):
         self.ax_s2.set_xlabel('Distance (r)', fontsize=16)
         self.ax_s2.set_ylabel('$S_2$', fontsize=16)
         self.ax_s2.tick_params(axis='both', which='major', labelsize=12)
-        self.ax_s2.set_title('REV Analysis - S2', fontsize=14, fontweight='bold')
+        self.ax_s2.set_title(f'{self.calc_type} Analysis - S2', fontsize=14, fontweight='bold')
         self.ax_s2.legend()
         self.ax_s2.grid(True, alpha=0.3)
         
