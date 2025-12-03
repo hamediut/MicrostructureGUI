@@ -5,6 +5,8 @@ Custom Qt widgets for the Micro_GUI application.
 import numpy as np
 from PySide6.QtWidgets import QLabel
 from PySide6.QtGui import QMouseEvent
+from PySide6.QtCore import Qt
+
 
 
 class ImageDisplayWidget(QLabel):
@@ -85,3 +87,41 @@ class ImageDisplayWidget(QLabel):
                     self.parent_window.update_status("")
 
         super().mouseMoveEvent(event)
+
+    def mousePressEvent(self, event: QMouseEvent):
+        """
+        Handle mouse clicks for zoom tool..
+
+        Args:
+            event: Mouse event containing button and position information
+        """
+
+        # Check if zoom tool is active in parent window
+        if self.parent_window and hasattr(self.parent_window, 'zoom_tool_active'):
+            if self.parent_window.zoom_tool_active and self.pixmap() and not self.pixmap().isNull():
+
+                # Get click position
+                pos = event.pos()
+                pixmap_rect = self.pixmap().rect()
+                label_rect = self.rect()
+
+                # Calculate offsets
+                x_offset = (label_rect.width() - pixmap_rect.width()) // 2
+                y_offset = (label_rect.height() - pixmap_rect.height()) // 2
+
+                # Adjust position
+                adjusted_x = pos.x() - x_offset
+                adjusted_y = pos.y() - y_offset
+            
+            # Check if within pixmap
+            if 0 <= adjusted_x < pixmap_rect.width() and 0 <= adjusted_y < pixmap_rect.height():
+                # Normalize to 0-1 range
+                norm_x = adjusted_x / pixmap_rect.width()
+                norm_y = adjusted_y / pixmap_rect.height()
+
+                # Left click = zoom in, Right click = zoom out
+                if event.button() == Qt.MouseButton.LeftButton:
+                    self.parent_window.zoom_at_point(norm_x, norm_y, zoom_in=True)
+                elif event.button() == Qt.MouseButton.RightButton:
+                    self.parent_window.zoom_at_point(norm_x, norm_y, zoom_in=False)
+        super().mousePressEvent(event)

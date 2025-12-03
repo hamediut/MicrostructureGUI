@@ -7,9 +7,9 @@ from typing import Optional, List
 
 from PySide6.QtWidgets import (
     QMainWindow, QLabel, QFileDialog, QScrollArea, QStatusBar, QDialog,
-    QSlider, QVBoxLayout, QWidget, QMessageBox, QProgressBar, QApplication
+    QSlider, QVBoxLayout, QWidget, QMessageBox, QProgressBar, QApplication, QTabBar,
 )
-from PySide6.QtGui import QPixmap, QImage
+from PySide6.QtGui import QPixmap, QImage, QAction, QIcon
 from PySide6.QtCore import Qt, QThread, Signal
 
 from PIL import Image
@@ -130,6 +130,7 @@ class ImageViewer(QMainWindow):
         self._setup_ui()
         self._create_menu()
         self._create_status_bar()
+        self._create_toolbar()
 
     def _setup_ui(self):
         """Set up the main UI components."""
@@ -172,6 +173,15 @@ class ImageViewer(QMainWindow):
         # Store current pixmap
         self.current_pixmap: Optional[QPixmap] = None
 
+        # Zoom tool state, Add Zoom State Variables
+        self.zoom_tool_active = False # Track if zoom tool is currently enabled
+        self.zoom_factor = 1.0 # Current zoom level (1.0 = 100%)
+        self.zoom_center_x = 0.5  # Where to center the zoom (normalized 0-1 coordinates)
+        self.zoom_center_y = 0.5
+        self.min_zoom = 0.1  # Limits for zooming
+        self.max_zoom = 10.0 # Limits for zooming
+
+
     def _create_menu(self):
         """Create the application menu bar."""
         menubar = self.menuBar()
@@ -203,7 +213,22 @@ class ImageViewer(QMainWindow):
         rev_action.setShortcut("Ctrl+R")
         rev_action.setStatusTip("Calculate REV from the current image")
         rev_action.triggered.connect(self.calculate_rev)  # Placeholder, implement
-        rev_action
+
+    def _create_toolbar(self):
+        """Create the application toolbar."""
+
+        toolbar = QTabBar("Tools")
+        toolbar.setMovable(False) # Fix toolbar position
+        self.addToolBar(toolbar)
+
+        # Zoom tool action (toggleable)
+        self.zoom_tool_action = QAction("🔍", self)  # Using emoji as icon for now
+        self.zoom_tool_action.setCheckable(True) # Makes it toggle on/off
+        self.zoom_tool_action.setToolTip("Zoom Tool (Left-click: zoom in, Right-click: zoom out)")
+        self.zoom_tool_actionsetStatusTip("Activate zoom tool")
+        self.zoom_tool_action.toggled.connect(self.toggle_zoom_tool)
+        toolbar.addAction(self.zoom_tool_action)
+
 
     def _create_status_bar(self):
         """Create the status bar with progress indicator."""
@@ -509,6 +534,30 @@ class ImageViewer(QMainWindow):
         self.progress_bar.setVisible(False)
         QMessageBox.critical(self, "REV Error", f"Error calculating REV:\n{error_msg}")
         self.status_bar.showMessage(f"Error: {error_msg}")
+
+    def toggle_zoom_tool(self, checked: bool):
+         
+        """
+        Toggle the zoom tool on/off.
+        
+        Args:
+            checked: True if tool is activated, False if deactivated
+        """
+        self.zoom_tool_active = checked
+        if checked:
+            self.status_bar.showMessage("Zoom tool activated. Left-click to zoom in, Right-click to zoom out.")
+            # Change cursur to magnifying glass
+            self.image_label.setCursor(Qt.CursorShape.CrossCursor)
+             
+        else:
+            self.status_bar.showMessage("Zoom tool deactivated.")
+            # Reset cursor to normal
+            self.image_label.setCursor(Qt.CursorShape.ArrowCursor)
+            # Reset zoom
+            self.zoom_factor = 1.0
+            self.display_current_slice()
+
+    
 
     def resizeEvent(self, event):
         """Handle window resize."""
