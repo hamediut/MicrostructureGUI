@@ -331,7 +331,7 @@ def calculate_two_point_list(images:np.ndarray) -> List[np.ndarray]:
     images: np.ndarray of shape (n_imgs, img_size, mg_size)
     """
     #Take average of directions; use half linear size assuming equal dimension sizes
-    Nr = min(images.shape)//2
+    Nr = min(images.shape[1:])//2
 
     s2_list = []
     f2_list = []
