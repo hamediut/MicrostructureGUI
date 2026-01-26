@@ -117,7 +117,7 @@ class ImageViewer(QMainWindow):
         """Initialize the ImageViewer main window."""
         super().__init__()
 
-        self.setWindowTitle("Micro_GUI - Microstructure Analysis")
+        self.setWindowTitle("SMiCA - Statistical Microstructure Characterisation & Analysis")
         self.setGeometry(100, 100, 800, 600)
 
         # Store opened windows and image data
@@ -368,7 +368,7 @@ class ImageViewer(QMainWindow):
                     dims = f"{image_data.shape[1]} x {image_data.shape[2]} x {image_data.shape[0]}"
                 else:
                     dims = f"{image_data.shape[0]} x {image_data.shape[1]}"
-                self.setWindowTitle(f"Micro_GUI - [{dims}] - {file_name}")
+                self.setWindowTitle(f"SMiCA - [{dims}] - {file_name}")
 
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to load image:\n{str(e)}")
