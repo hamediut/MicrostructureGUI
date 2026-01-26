@@ -121,35 +121,40 @@ python -m src.micro_gui.main
 ## Project Structure
 
 ```
-Micro_GUI/
+SMiCA/
 ├── src/
 │   └── micro_gui/              # Main package
 │       ├── __init__.py
 │       ├── main.py             # Entry point
 │       ├── gui/                # GUI components
 │       │   ├── __init__.py
-│       │   ├── image_viewer.py # Main window
-│       │   ├── plot_window.py  # Plot display
-│       │   └── widgets.py      # Custom widgets
+│       │   ├── image_viewer.py     # Main window
+│       │   ├── plot_window.py      # SMDs plot display
+│       │   ├── rev_plot_window.py  # REV/RES plot display
+│       │   ├── rev_settings_dialog.py  # REV/RES settings
+│       │   └── widgets.py          # Custom widgets
 │       ├── analysis/           # Analysis algorithms
 │       │   ├── __init__.py
-│       │   └── smds.py         # SMDS calculations
+│       │   └── smds.py         # SMDs and REV/RES calculations
 │       └── utils/              # Utility functions
-│           └── __init__.py
+│           ├── __init__.py
+│           └── image_utils.py  # Image processing utilities
 ├── tests/                      # Unit tests
 │   ├── __init__.py
-│   └── test_smds.py
-├── docs/                       # Documentation
-├── examples/                   # Example images and scripts
+│   ├── test_smds.py
+│   ├── test_image_utils.py
+│   ├── test_plot_window.py
+│   └── test_rev_plot_window.py
 ├── ImageViewer.py              # Main entry point (backward compatible)
 ├── smds.py                     # Legacy SMDS module (for compatibility)
 ├── requirements.txt            # Python dependencies
 ├── setup.py                    # Package installation script
+├── LICENSE                     # MIT License
 ├── .gitignore
 └── README.md
 ```
 
-## Development
+<!-- ## Development
 
 ### Setting Up for Development
 
@@ -161,9 +166,9 @@ pip install -r requirements.txt
 # Install pre-commit hooks (optional)
 # pip install pre-commit
 # pre-commit install
-```
+``` -->
 
-### Running Tests
+<!-- ### Running Tests
 
 ```bash
 # Run all tests
@@ -182,9 +187,9 @@ This project follows PEP 8 style guidelines. Use `black` for formatting:
 
 ```bash
 black src/ tests/
-```
+``` -->
 
-## Algorithm Details
+<!-- ## Algorithm Details
 
 ### SMDs (Statistical Microstructure Descriptors)
 
@@ -203,7 +208,7 @@ The application calculates two-point correlation functions S₂(r), which measur
 **Performance**:
 - JIT-compiled with Numba for near-C performance
 - Background threading prevents UI freezing
-- Typical processing time: ~1-10 seconds for 256³ volumes
+- Typical processing time: ~1-10 seconds for 256³ volumes -->
 
 ## Contributing
 
@@ -219,13 +224,10 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ### Planned Features (Phase 2-4)
 
-- [ ] Additional correlation functions (3-point, lineal path)
-- [ ] Batch processing for multiple images
-- [ ] Image preprocessing tools (filtering, thresholding)
-- [ ] Statistical analysis and comparison tools
-- [ ] Project save/load functionality
-- [ ] Plugin architecture for custom analysis methods
-- [ ] GPU acceleration for large volumes
+- [ ] Higher-order correlation functions (3-point and higher polytope functions)
+- [ ] Connectiity descriptors (Lineal-path and cluster connectivity)
+- [ ] Minkowski functional computation for 2D and 3D images
+- [ ] Quantify evolution of these measures for 4D images
 - [ ] Executable distribution (standalone .exe)
 
 ## Citation
@@ -282,7 +284,8 @@ Project Link: [https://github.com/hamediut/SMiCA](https://github.com/hamediut/SM
 
 - **v0.1.0** (2025-01-17) - Initial alpha release
   - Basic 2D/3D image loading
-  - SMDS calculation
+  - SMDs calculation
+  - REV\RES analysis
   - Plot visualization and export
 
 ---
