@@ -146,7 +146,6 @@ SMiCA/
 │   ├── test_plot_window.py
 │   └── test_rev_plot_window.py
 ├── ImageViewer.py              # Main entry point (backward compatible)
-├── smds.py                     # Legacy SMDS module (for compatibility)
 ├── requirements.txt            # Python dependencies
 ├── setup.py                    # Package installation script
 ├── LICENSE                     # MIT License
