@@ -1,4 +1,4 @@
-# Micro_GUI - Microstructure Analysis Application
+# SMiCA: Statistical Microstructure Characterisation & Analysis
 
 A professional GUI application for analyzing microstructure images using correlation functions and statistical analysis methods, specifically designed for materials science and microstructure characterization.
 
@@ -13,16 +13,17 @@ A professional GUI application for analyzing microstructure images using correla
 - **Binary Image Analysis**: Load and analyze binary TIF/TIFF images (2D and 3D)
 - **3D Volume Support**: Navigate through multi-page TIFF files with slice-by-slice viewing
 - **SMDS Calculations**:
-  - Second-order Moment Density Statistics (S2) computation
-  - Two-point correlation functions in all principal directions
+  - Two-point correlation function (S2) and scaled autocovariance (F2) computation in 2D and 3D.
   - Optimized with Numba JIT compilation for performance
+- **Representative Elementary Size**:
+  - Representative Elementary Size analysis in 2D and 3D images using S2 and F2 functions ([Amiri et al., 2024](https://doi.org/10.1029/2024JH000178)).
 - **Interactive Visualization**:
   - Real-time pixel value display on mouse hover
   - Coordinate tracking
   - Matplotlib-based result plotting
 - **Data Export**:
   - Save correlation plots as PNG, JPEG, or PDF
-  - Export S2 values to CSV for further analysis
+  - Export S2 values to CSV for custom plotting and further analysis
 - **Professional UI**:
   - PySide6-based Qt interface
   - Progress indicators for long calculations
@@ -39,7 +40,7 @@ A professional GUI application for analyzing microstructure images using correla
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Micro_GUI.git
+git clone https://github.com/hamediut/SMiCA.git
 cd Micro_GUI
 
 # Create and activate conda environment
@@ -57,7 +58,7 @@ pip install -e .
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/Micro_GUI.git
+git clone https://github.com/hamediut/SMiCA.git
 cd Micro_GUI
 
 # Create virtual environment
@@ -232,11 +233,11 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 If you use this software in your research, please cite:
 
 ```bibtex
-@software{micro_gui_2025,
-  title = {Micro_GUI: Microstructure Analysis Application},
+@software{smica_2025,
+  title = {SMiCA: Statistical Microstructure Characterisation & Analysis},
   author = {Hamed Amiri},
   year = {2025},
-  url = {https://github.com/hamediut/MicrostructureGUI}
+  url = {https://github.com/hamediut/SMiCA}
 }
 ```
 
@@ -254,7 +255,7 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 Hamed Amiri - amiiri.hamed@gmail.com
 
-Project Link: [https://github.com/hamediut/MicrostructureGUI](https://github.com/hamediut/MicrostructureGUI)
+Project Link: [https://github.com/hamediut/SMiCA](https://github.com/hamediut/SMiCA)
 
 ## Troubleshooting
 

@@ -18,10 +18,10 @@ setup(
     version='0.1.0',
     author='Hamed',  # Update with your name
     author_email='amiiri.hamed@gmail.com',  # Update with your email
-    description='GUI Application for Microstructure Analysis using Correlation Functions',
+    description='GUI Application for Statistical Microstructure Characterisation and Analysis',
     long_description=long_description,
     long_description_content_type='text/markdown',
-    url='https://github.com/hamediut/MicrostructureGUI',  # Update with your GitHub URL
+    url='https://github.com/hamediut/SMiCA',  # Update with your GitHub URL
     packages=find_packages(where='src'),
     package_dir={'': 'src'},
     classifiers=[
@@ -47,7 +47,7 @@ setup(
     include_package_data=True,
     keywords='microstructure analysis correlation-functions materials-science image-processing',
     project_urls={
-        'Bug Reports': 'https://github.com/yourusername/Micro_GUI/issues',
-        'Source': 'https://github.com/yourusername/Micro_GUI',
+        'Bug Reports': 'https://github.com/hamediut/SMiCA/issues',
+        'Source': 'https://github.com/hamediut/SMiCA',
     },
 )
