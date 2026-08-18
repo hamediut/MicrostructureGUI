@@ -211,3 +211,15 @@ test_images/
 
 # Ad-hoc benchmark/scratch data files (large synthetic volumes generated while profiling)
 bench_volume*.tif
+
+# Windows installer build output (100MB+ compiled Setup.exe - never commit this, it's
+# a regenerable build artifact; distribute it via a GitHub Release instead, see README)
+installer/output/
+
+# Third-party redistributable installers downloaded manually before building - see
+# installer/redist/README.md for where to get vc_redist.x64.exe
+installer/redist/*.exe
+
+# SMiCA.spec is hand-tuned PyInstaller build config (not PyInstaller-generated
+# boilerplate, despite the generic *.spec rule above assuming that) - keep it tracked.
+!SMiCA.spec
