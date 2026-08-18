@@ -113,6 +113,10 @@ pip install -e .
 
 ### Running the Application
 
+> If you used the Windows installer (Option 0 above), skip this - just launch SMiCA
+> from the Start Menu. The two methods below are for running from a source install
+> (Options 1/2) instead.
+
 #### Method 1: Run as an installed package (for using the app)
 
 ```bash
