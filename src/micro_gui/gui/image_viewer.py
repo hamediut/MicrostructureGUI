@@ -9,7 +9,7 @@ from typing import Optional, List
 
 from PySide6.QtWidgets import (
     QMainWindow, QLabel, QFileDialog, QScrollArea, QStatusBar, QDialog,
-    QSlider, QVBoxLayout, QWidget, QMessageBox, QProgressBar, QApplication
+    QSlider, QVBoxLayout, QWidget, QMessageBox, QProgressBar, QApplication, QCheckBox
 )
 from PySide6.QtGui import QPixmap, QImage
 from PySide6.QtCore import Qt, QThread, Signal
@@ -662,6 +662,11 @@ class ImageViewer(QMainWindow):
         # Real step/time numbers per slice, from a folder import's filenames (e.g. [0, 5, 12, 20]).
         # None for anything without associated filenames (opened tif, native 3D volume).
         self.stack_labels: Optional[list] = None
+        #connected coponents results
+        self.cc_labels_data: Optional[np.ndarray] = None # label volume from the last connected-components run
+        self.cc_color_lut: Optional[np.ndarray] = None # (n_labels+1, 3) uint8 - label id -> RGB color
+        self.show_cc_colors: bool = False # is the checkbox currently on?
+
         self.current_file_path: Optional[str] = None
         self.current_slice_index: int = 0
         self.current_time_index: int = 0 # which 3D volume (T axis) is showing, 4D data only
@@ -725,6 +730,15 @@ class ImageViewer(QMainWindow):
         self.slice_label.setAlignment(Qt.AlignCenter)
         self.slice_label.setVisible(False)
         self.layout.addWidget(self.slice_label)
+
+        # Toggle for showing connected-components colors instead of the raw grayscale
+        # slice - hidden until a connected-components calculation has actually run.
+        self.cc_color_checkbox = QCheckBox("Show Connected Components Colors")
+        self.cc_color_checkbox.setVisible(False)
+        self.cc_color_checkbox.stateChanged.connect(self.on_cc_color_toggle)
+        self.layout.addWidget(self.cc_color_checkbox)
+
+
 
         # Store current pixmap
         self.current_pixmap: Optional[QPixmap] = None
@@ -905,6 +919,20 @@ class ImageViewer(QMainWindow):
 
         return QPixmap.fromImage(q_image)
 
+    def labels_to_qpixmap(self, rgb_image: np.ndarray)->QPixmap:
+
+        """
+        Convert an (H, W, 3) uint8 RGB array into a QPixmap - same idea as
+        numpy_to_qpixmap but for an already-colored image (Format_RGB888
+        instead of Format_Grayscale8), used for the connected-components color overlay.
+        """
+
+        height, width, _ = rgb_image.shape
+        bytes_per_line = width * 3
+        q_image = QImage(rgb_image.data, width, height, bytes_per_line, QImage.Format.Format_RGB888)
+
+        return QPixmap.fromImage(q_image)
+
     def display_current_slice(self):
         """Display the current slice of the image."""
         if self.current_image_data is None:
@@ -924,7 +952,21 @@ class ImageViewer(QMainWindow):
         # Convert to pixmap and display - pass the WHOLE volume's min/max (not just this
         # slice's) so a uniform slice (e.g. all-background) still renders correctly instead
         # of falling back to flat grey (see numpy_to_qpixmap's docstring).
-        self.current_pixmap = self.numpy_to_qpixmap(current_2d, self._display_min, self._display_max)
+        # self.current_pixmap = self.numpy_to_qpixmap(current_2d, self._display_min, self._display_max)
+
+        # Connected-components colors replace the grayscale slice entirely when the
+        # checkbox is on - only meaningful for a real 3D volume, since that's the only
+        # shape connected_components_3d currently labels.
+
+        if self.show_cc_colors and self.cc_labels_data is not None and self.current_image_data.ndim == 3:
+            label_slice = self.cc_labels_data[self.current_slice_index, :, :]
+            rgb_slice = self.cc_color_lut[label_slice]  # (H, W, 3) uint8, via LUT lookup
+            self.current_pixmap = self.labels_to_qpixmap(rgb_slice)
+
+        else:
+            self.current_pixmap = self.numpy_to_qpixmap(current_2d, self._display_min, self._display_max)
+
+
         scaled_pixmap = self.current_pixmap.scaled(
             self.image_label.size(),
             Qt.AspectRatioMode.KeepAspectRatio,
@@ -949,6 +991,12 @@ class ImageViewer(QMainWindow):
         if self.current_image_data is not None and self.current_image_data.ndim == 4:
             self.time_label.setText(f"Time: {value} / {self.current_image_data.shape[0] - 1}")
             self.display_current_slice()
+    def on_cc_color_toggle(self, state):
+        """Switch the main view between the raw grayscale slice and connected-components colors."""
+
+        self.show_cc_colors = bool(state)
+        self.display_current_slice()
+
 
     def open_image(self):
         """Open a file dialog to select a TIF image and display it."""
@@ -996,6 +1044,16 @@ class ImageViewer(QMainWindow):
         self.current_time_index = 0
         self.data_mode = data_mode
         self.stack_labels = stack_labels
+
+        # A connected-components result belongs to the OLD image - reset it here so it
+        # doesn't linger and get wrongly displayed over unrelated new data.
+
+        self.cc_labels_data = None
+        self.cc_color_lut = None
+        self.show_cc_colors = False
+        self.cc_color_checkbox.setChecked(False)
+        self.cc_color_checkbox.setVisible(False)
+
 
         # Computed ONCE for the whole volume (not per-slice) so display_current_slice() can
         # normalize every slice against the same range - see numpy_to_qpixmap's docstring.
@@ -1343,6 +1401,30 @@ class ImageViewer(QMainWindow):
             filtered_table, self._cc_unit, self._cc_is_3d, total_components, self
         )
         result_window.show()
+
+        if self._cc_is_3d:
+            labels = result['labels']
+            # Zero out components the min-size filter dropped, so they don't
+            # clutter the colored view either - keeps it consistent with what
+            # the results table actually reports.
+            keep = np.zeros(int(labels.max()) + 1, dtype=bool)
+            keep[filtered_table['label'].to_numpy()] = True
+            labels_for_display = np.where(keep[labels], labels, 0)
+
+            self.cc_labels_data = labels_for_display
+            n_labels = int(labels_for_display.max())
+            rng = np.random.default_rng(0)
+            colors = (rng.random((n_labels + 1, 3)) * 255).astype(np.uint8)
+            colors[0] = 0  # background stays black
+            self.cc_color_lut = colors
+
+            self.cc_color_checkbox.setVisible(True)
+            self.cc_color_checkbox.setChecked(True)
+            self.show_cc_colors = True
+            self.display_current_slice()
+
+
+
 
         self.status_bar.showMessage(f"Connected components: {total_components} found, {len(filtered_table)} shown")
 
