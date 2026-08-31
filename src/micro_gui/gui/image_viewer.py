@@ -955,11 +955,14 @@ class ImageViewer(QMainWindow):
         # self.current_pixmap = self.numpy_to_qpixmap(current_2d, self._display_min, self._display_max)
 
         # Connected-components colors replace the grayscale slice entirely when the
-        # checkbox is on - only meaningful for a real 3D volume, since that's the only
-        # shape connected_components_3d currently labels.
-
-        if self.show_cc_colors and self.cc_labels_data is not None and self.current_image_data.ndim == 3:
-            label_slice = self.cc_labels_data[self.current_slice_index, :, :]
+        # checkbox is on - cc_labels_data is either a full 3D label volume (index by
+        # current_slice_index, same as current_2d above) or a single 2D label image
+        # (used directly, same as current_2d's own ndim==2 fallback above).
+        if self.show_cc_colors and self.cc_labels_data is not None:
+            if self.current_image_data.ndim == 3:
+                label_slice = self.cc_labels_data[self.current_slice_index, :, :]
+            else:
+                label_slice = self.cc_labels_data
             rgb_slice = self.cc_color_lut[label_slice]  # (H, W, 3) uint8, via LUT lookup
             self.current_pixmap = self.labels_to_qpixmap(rgb_slice)
 
@@ -1358,7 +1361,7 @@ class ImageViewer(QMainWindow):
             return
 
         is_3d = self.current_image_data.ndim == 3
-        dialog = ConnectedComponentsSettingsDialog(self)
+        dialog = ConnectedComponentsSettingsDialog(is_3d=is_3d, parent=self)
         if dialog.exec() != QDialog.Accepted:
             return # user cancelled
 
@@ -1402,26 +1405,26 @@ class ImageViewer(QMainWindow):
         )
         result_window.show()
 
-        if self._cc_is_3d:
-            labels = result['labels']
-            # Zero out components the min-size filter dropped, so they don't
-            # clutter the colored view either - keeps it consistent with what
-            # the results table actually reports.
-            keep = np.zeros(int(labels.max()) + 1, dtype=bool)
-            keep[filtered_table['label'].to_numpy()] = True
-            labels_for_display = np.where(keep[labels], labels, 0)
+        # Zero out components the min-size filter dropped, so they don't
+        # clutter the colored view either - keeps it consistent with what
+        # the results table actually reports. Works the same for a 2D label
+        # array or a 3D one - fancy indexing doesn't care about rank.
+        labels = result['labels']
+        keep = np.zeros(int(labels.max()) + 1, dtype=bool)
+        keep[filtered_table['label'].to_numpy()] = True
+        labels_for_display = np.where(keep[labels], labels, 0)
 
-            self.cc_labels_data = labels_for_display
-            n_labels = int(labels_for_display.max())
-            rng = np.random.default_rng(0)
-            colors = (rng.random((n_labels + 1, 3)) * 255).astype(np.uint8)
-            colors[0] = 0  # background stays black
-            self.cc_color_lut = colors
+        self.cc_labels_data = labels_for_display
+        n_labels = int(labels_for_display.max())
+        rng = np.random.default_rng(0)
+        colors = (rng.random((n_labels + 1, 3)) * 255).astype(np.uint8)
+        colors[0] = 0  # background stays black
+        self.cc_color_lut = colors
 
-            self.cc_color_checkbox.setVisible(True)
-            self.cc_color_checkbox.setChecked(True)
-            self.show_cc_colors = True
-            self.display_current_slice()
+        self.cc_color_checkbox.setVisible(True)
+        self.cc_color_checkbox.setChecked(True)
+        self.show_cc_colors = True
+        self.display_current_slice()
 
 
 

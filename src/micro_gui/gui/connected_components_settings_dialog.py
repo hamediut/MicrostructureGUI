@@ -15,8 +15,11 @@ class ConnectedComponentsSettingsDialog(QDialog):
     plus a connectivity choice and a minimum-size filter.
     """
 
-    def __init__(self, parent = None):
+    def __init__(self, is_3d: bool = True, parent = None):
         super().__init__(parent)
+
+
+        self.is_3d = is_3d
 
         # will hold the chosen values after OK - same convention as
         # MinkowskiSettingsDialog's self.resolution/self.unit
@@ -35,9 +38,11 @@ class ConnectedComponentsSettingsDialog(QDialog):
     def _setup_ui(self):
         layout = QVBoxLayout(self)
 
+        dims = "3D volume" if self.is_3d else "2D image"
+
         info_label = QLabel(
-            "Label connected components of the foreground phase (value 1) "
-            "in this 3D image and measure each one's volume."
+            f"Label connected components of the foreground phase (value 1) "
+            f"in this {dims} and measure each one's volume."
         )
 
         info_label.setWordWrap(True)
@@ -49,15 +54,21 @@ class ConnectedComponentsSettingsDialog(QDialog):
         # Text carries the actual connectivity number so _accept() can parse
         # it straight back out - avoids a second combo -> int lookup table.
         self.connectivity_combo = QComboBox()
-        self.connectivity_combo.addItems([
-            "6 (face)", "18 (face + edge)", "26 (face + edge + corner)"
-        ])
-        self.connectivity_combo.setCurrentIndex(2) # default 26, most permissive
-        self.connectivity_combo.setToolTip(
-            "Neighbor rule for 'connected' - 6 shares a full face only, 18 also "
-            "merges components touching along just an edge, 26 also merges "
-            "components touching at only a single corner voxel."
-        )
+        if self.is_3d:
+            self.connectivity_combo.addItems(["6 (face)", "18 (face + edge)", "26 (face + edge + corner)"])
+            self.connectivity_combo.setCurrentIndex(2) # default 26, most permissive
+            self.connectivity_combo.setToolTip(
+                        "Neighbor rule for 'connected' - 6 shares a full face only, 18 also "
+                        "merges components touching along just an edge, 26 also merges "
+                        "components touching at only a single corner voxel."
+                    )
+        else:
+            self.connectivity_combo.addItems(["4 (face)", "8 (face + corner)"])
+            self.connectivity_combo.setCurrentIndex(1) # default 8, most permissive
+            self.connectivity_combo.setToolTip(
+                        "Neighbor rule for 'connected' - 4 shares a full face only, 8 also "
+                        "merges components touching along just an edge."
+                    )
         form_layout.addRow("Connectivity:", self.connectivity_combo)
 
         self.resolution_spinbox = QDoubleSpinBox()
