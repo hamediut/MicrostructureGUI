@@ -55,6 +55,11 @@ from .minkowski_evolution_plot_window import MinkowskiEvolutionPlotWindow
 
 from ..utils.image_utils import load_multipage_tif
 
+#connected components
+from .connected_components_settings_dialog import ConnectedComponentsSettingsDialog
+from ..analysis.connected_components import connected_components_2d, connected_components_3d
+from .connected_components_results_dialog import ConnectedComponentsResultsDialog
+
 
 ## caclulation threads for background processing, so GUI remains responsive
 
@@ -431,6 +436,33 @@ class MinkowskiEvolutionStreamingThread(QThread):
         except Exception as e:
             self.error.emit(str(e))
 
+class ConnectedComponentsThread(QThread):
+    """
+    Thread for running connected-components labeling in the background -
+    label() on a full-size volume takes a few seconds, long enough to
+    freeze the UI if run directly on the GUI thread.
+    """
+    finished = Signal(object) # Emits the dict connected_components_2d/_3d returns
+    error = Signal(str)
+
+    def __init__(self, image_data:np.ndarray, connectivity:int, resolution: float, is_3d: bool):
+        super().__init__()
+
+        self.image_data = image_data
+        self.connectivity = connectivity
+        self.resolution = resolution
+        self.is_3d = is_3d
+
+    def run(self):
+        try:
+            compute = connected_components_3d if self.is_3d else connected_components_2d
+            result = compute(self.image_data, connectivity=self.connectivity, res=self.resolution)
+            self.finished.emit(result)
+        except Exception as e:
+            self.error.emit(str(e))
+
+
+
 
 class SliceEvolutionThread(QThread):
     """
@@ -780,6 +812,15 @@ class ImageViewer(QMainWindow):
             "mean curvature, Euler characteristic) from the current image"
         )
         minkowski_action.triggered.connect(self.open_minkowski_dialog)
+
+        # connected components
+        cc_action = image_analysis_menu.addAction("Calculate &Connected Components...")
+        cc_action.setStatusTip(
+            "Label connected components of the foreground phase and measure each "
+            "one's size (2D area or 3D volume)."
+        )
+        cc_action.triggered.connect(self.open_connected_components_dialog)
+
 
     def _create_status_bar(self):
         """Create the status bar with progress indicator."""
@@ -1242,6 +1283,78 @@ class ImageViewer(QMainWindow):
 
         result_window = MinkowskiResultsDialog(result, unit, is_3d, self)
         result_window.show()
+
+
+    def open_connected_components_dialog(self):
+        """Open the connected-components settings dialog and run labeling on the current image."""
+
+        if self.current_image_data is None:
+            QMessageBox.warning(self, "No Image", "Please open an image first.")
+            return
+        if self.current_image_data.ndim not in (2, 3):
+            QMessageBox.warning(
+                self, "Not applicable",
+                "Connected components needs a single 2D image or 3D volume - "
+                "time-series support is coming in a later step."
+            )
+            return
+
+        is_3d = self.current_image_data.ndim == 3
+        dialog = ConnectedComponentsSettingsDialog(self)
+        if dialog.exec() != QDialog.Accepted:
+            return # user cancelled
+
+        # Stash the settings now - the thread's finished signal only carries the
+        # result dict, not the settings that produced it (same reasoning as
+        # self._minkowski_evolution_unit etc. in open_minkowski_evolution_dialog).
+
+        self._cc_unit = dialog.get_unit()
+        self._cc_min_size = dialog.get_min_size()
+        self._cc_is_3d = is_3d
+
+        self.progress_bar.setVisible(True)
+        self.status_bar.showMessage(f"Labeling connected components (connectivity={dialog.get_connectivity()})...")
+        QApplication.processEvents()
+
+        self.cc_thread = ConnectedComponentsThread(
+            self.current_image_data, connectivity=dialog.get_connectivity(),
+            resolution=dialog.get_resolution(), is_3d=is_3d
+        )
+
+        self.cc_thread.finished.connect(self.on_connected_components_finished)
+        self.cc_thread.error.connect(self.on_connected_components_error)
+        self.cc_thread.start()
+
+    def on_connected_components_finished(self, result:dict):
+        """Handle completion of connected-components labeling - filter by min size and show results."""
+
+
+        self.progress_bar.setVisible(False)
+        table =  result['table']
+        total_components = result['num_components']
+
+        # min-size filtering happens here, not inside connected_components_2d/3d -
+        # it's a display/reporting choice, not part of the labeling itself.
+
+        count_col = 'voxel_count' if self._cc_is_3d else 'pixel_count'
+        filtered_table = table[table[count_col] >= self._cc_min_size].reset_index(drop=True)
+
+        result_window = ConnectedComponentsResultsDialog(
+            filtered_table, self._cc_unit, self._cc_is_3d, total_components, self
+        )
+        result_window.show()
+
+        self.status_bar.showMessage(f"Connected components: {total_components} found, {len(filtered_table)} shown")
+
+    def on_connected_components_error(self, error_msg: str):
+        """Handle error during connected-components labeling."""
+
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "Connected Components Error", f"Error labeling components:\n{error_msg}")
+        self.status_bar.showMessage(f"Error: {error_msg}")
+
+
+    
 
 
 
