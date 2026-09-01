@@ -4,7 +4,7 @@ microstructure images.
 """
 import numpy as np
 import pandas as pd
-from skimage.measure import label, regionprops_table
+from skimage.measure import label, regionprops_table, regionprops
 
 # Avizo/Dragonfly describe neighbor rules by how many touching neighbors count
 # as "connected" - 6/18/26 in 3D (face, face+edge, face+edge+corner), 4/8 in
@@ -108,3 +108,44 @@ def connected_components_3d(image: np.ndarray, connectivity: int = 26, res: floa
         image, _CONNECTIVITY_MAP_3D, connectivity, res,
         size_exponent=3, count_col='voxel_count', measure_col='volume',
     )
+
+def compute_shape_measurements(labels: np.ndarray, is_3d: bool, res: float = 1.0)-> pd.DataFrame:
+    """Compute per-component shape measurements available directly from
+    skimage's regionprops - no custom surface reconstruction or eigenvector
+    math involved. Surface area, sphericity, elongation/flatness, and
+    orientation need that extra math and are a separate follow-up function.
+
+    Args:
+        labels: label array from connected_components_2d/_3d's 'labels' key.
+        is_3d: whether `labels` is a 3D volume or a 2D image.
+        res: pixel/voxel size (physical units), same convention as
+            connected_components_2d/_3d's `res`.
+
+    Returns:
+        pandas DataFrame, one row per component (background excluded), meant
+        to be merged with connected_components_2d/_3d's own table on 'label'.
+    """
+
+    rows = []
+    for region in regionprops(labels):
+        row = {'label': region.label}
+        row['equivalent_diameter'] = region.equivalent_diameter * res
+
+        # axis_major_length/axis_minor_length are native in both 2D and 3D.
+        major_length = region.axis_major_length * res
+        minor_length = region.axis_minor_length * res
+        row['aspect_ratio'] = major_length / minor_length if minor_length > 0 else np.nan
+
+        if not is_3d:
+            perimeter = region.perimeter * res
+            area = region.area * res ** 2
+            row['perimeter'] = perimeter
+
+            # "Specific" here means per THIS COMPONENT's own area - a shape
+            # property, unlike minkowski_2d's specific_perimeter which
+            # normalizes by the whole image domain.
+            row['specific_perimeter'] = perimeter / area if area > 0 else np.nan
+            row['circularity'] = 4 * np.pi * area / perimeter ** 2 if perimeter > 0 else np.nan
+
+        rows.append(row)
+    return pd.DataFrame(rows)

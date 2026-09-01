@@ -10,8 +10,8 @@ from PySide6.QtWidgets import (
 class ConnectedComponentsSettingsDialog(QDialog):
 
     """
-    Dialog to configure connected-components labeling for the current 3D
-    image. Same QFormLayout numeric-dialog pattern as MinkowskiSettingsDialog,
+    Dialog to configure connected-components labeling for the current 2D or
+    3D image. Same QFormLayout numeric-dialog pattern as MinkowskiSettingsDialog,
     plus a connectivity choice and a minimum-size filter.
     """
 
@@ -39,10 +39,12 @@ class ConnectedComponentsSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         dims = "3D volume" if self.is_3d else "2D image"
+        count_unit = "voxel" if self.is_3d else "pixel"
+        measure_word = "volume" if self.is_3d else "area"
 
         info_label = QLabel(
             f"Label connected components of the foreground phase (value 1) "
-            f"in this {dims} and measure each one's volume."
+            f"in this {dims} and measure each one's {measure_word}."
         )
 
         info_label.setWordWrap(True)
@@ -76,10 +78,10 @@ class ConnectedComponentsSettingsDialog(QDialog):
         self.resolution_spinbox.setDecimals(4)
         self.resolution_spinbox.setValue(1.0)
         self.resolution_spinbox.setToolTip(
-            "Physical size of one voxel (isotropic). Scales voxel counts into "
-            "physical volumes - leave at 1.0 for results in voxel units."
+            f"Physical size of one {count_unit} (isotropic). Scales {count_unit} counts "
+            f"into physical {measure_word}s - leave at 1.0 for results in {count_unit} units."
         )
-        form_layout.addRow("Voxel size:", self.resolution_spinbox)
+        form_layout.addRow(f"{count_unit.capitalize()} size:", self.resolution_spinbox)
 
         self.unit_combo = QComboBox()
         self.unit_combo.addItems(['\u00b5m', 'mm', 'nm', 'voxels'])
@@ -92,10 +94,10 @@ class ConnectedComponentsSettingsDialog(QDialog):
         self.min_size_spinbox.setRange(1, 10_000_000)
         self.min_size_spinbox.setValue(1)
         self.min_size_spinbox.setToolTip(
-            "Components smaller than this (in voxels) are dropped from the "
-            "results table."
+            f"Components smaller than this (in {count_unit}s) are dropped from the "
+            f"results table."
         )
-        form_layout.addRow("Minimum size (voxels):", self.min_size_spinbox)
+        form_layout.addRow(f"Minimum size ({count_unit}s):", self.min_size_spinbox)
 
         settings_group.setLayout(form_layout)
         layout.addWidget(settings_group)
