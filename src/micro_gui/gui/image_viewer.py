@@ -56,11 +56,10 @@ from .minkowski_evolution_plot_window import MinkowskiEvolutionPlotWindow
 from ..utils.image_utils import load_multipage_tif
 
 #connected components
-from .connected_components_settings_dialog import ConnectedComponentsSettingsDialog
-from ..analysis.connected_components import connected_components_2d, connected_components_3d
+from ..analysis.connected_components import connected_components_2d, connected_components_3d, compute_shape_measurements
 from .connected_components_results_dialog import ConnectedComponentsResultsDialog
-
-
+from .measurements_settings_dialog import MeasurementsSettingsDialog
+from .connected_components_settings_dialog import ConnectedComponentsSettingsDialog
 ## caclulation threads for background processing, so GUI remains responsive
 
 class REVCalculationThread(QThread):
@@ -441,26 +440,67 @@ class ConnectedComponentsThread(QThread):
     Thread for running connected-components labeling in the background -
     label() on a full-size volume takes a few seconds, long enough to
     freeze the UI if run directly on the GUI thread.
+
+    Runs with res=1.0 (raw voxel/pixel units) - real voxel size isn't known
+    yet at this step. It's asked for later in MeasurementsSettingsDialog and
+    applied by MeasurementsThread once labeling is done.
     """
     finished = Signal(object) # Emits the dict connected_components_2d/_3d returns
     error = Signal(str)
 
-    def __init__(self, image_data:np.ndarray, connectivity:int, resolution: float, is_3d: bool):
+    def __init__(self, image_data:np.ndarray, connectivity:int, is_3d: bool):
         super().__init__()
 
         self.image_data = image_data
         self.connectivity = connectivity
-        self.resolution = resolution
         self.is_3d = is_3d
 
     def run(self):
         try:
             compute = connected_components_3d if self.is_3d else connected_components_2d
-            result = compute(self.image_data, connectivity=self.connectivity, res=self.resolution)
+            result = compute(self.image_data, connectivity=self.connectivity, res= 1.0)
             self.finished.emit(result)
         except Exception as e:
             self.error.emit(str(e))
 
+class MeasurementsThread(QThread):
+    """
+    Thread for running the measurement step on an already-labeled connected-
+    components result: rescales the raw count into physical volume/area now
+    that the real voxel size is known, and computes the requested shape
+    measurements. regionprops per component is fast, but still worth keeping
+    off the GUI thread for large component counts.
+    """
+
+    finished = Signal(object) # Emits the merged, rescaled pandas DataFrame
+    error = Signal(str)
+
+    def __init__(self, cc_result: dict, is_3d: bool, resolution: float):
+        super().__init__()
+        self.cc_result = cc_result
+        self.is_3d = is_3d
+        self.resolution = resolution
+
+    def run(self):
+        try:
+            table = self.cc_result['table'].copy()
+            count_col = 'voxel_count' if self.is_3d else 'pixel_count'
+            measure_col = 'volume' if self.is_3d else 'area'
+            size_exponent = 3 if self.is_3d else 2
+
+            # The Connected Components step ran with res=1.0 (raw units) -
+            # rescale the measure column now with the real voxel/pixel size.
+            table[measure_col] = table[count_col] * (self.resolution ** size_exponent)
+
+            shape_table = compute_shape_measurements(
+                self.cc_result['labels'], self.is_3d, res=self.resolution
+                )
+
+            merged_table = table.merge(shape_table, on='label', how='left')
+            self.finished.emit(merged_table)
+
+        except Exception as e:
+            self.error.emit(str(e))
 
 
 
@@ -664,6 +704,7 @@ class ImageViewer(QMainWindow):
         self.stack_labels: Optional[list] = None
         #connected coponents results
         self.cc_labels_data: Optional[np.ndarray] = None # label volume from the last connected-components run
+        self.cc_result: Optional[dict] = None # dict from connected_components_2d/_3d() with all the measurements
         self.cc_color_lut: Optional[np.ndarray] = None # (n_labels+1, 3) uint8 - label id -> RGB color
         self.show_cc_colors: bool = False # is the checkbox currently on?
 
@@ -714,8 +755,6 @@ class ImageViewer(QMainWindow):
         self.time_label.setVisible(False)
         self.layout.addWidget(self.time_label)
 
-
-
         # Create slider for 3D images (initially hidden)
         self.slice_slider = QSlider(Qt.Orientation.Horizontal)
         self.slice_slider.setMinimum(0)
@@ -737,8 +776,6 @@ class ImageViewer(QMainWindow):
         self.cc_color_checkbox.setVisible(False)
         self.cc_color_checkbox.stateChanged.connect(self.on_cc_color_toggle)
         self.layout.addWidget(self.cc_color_checkbox)
-
-
 
         # Store current pixmap
         self.current_pixmap: Optional[QPixmap] = None
@@ -834,6 +871,14 @@ class ImageViewer(QMainWindow):
             "one's size (2D area or 3D volume)."
         )
         cc_action.triggered.connect(self.open_connected_components_dialog)
+
+        # measurements
+        measurements_action = image_analysis_menu.addAction("Calculate &Measurements...")
+        measurements_action.setStatusTip(
+            "Compute shape measurements for the components found by the last "
+            "Connected Components run."
+        )
+        measurements_action.triggered.connect(self.open_measurements_dialog)
 
 
     def _create_status_bar(self):
@@ -1050,7 +1095,7 @@ class ImageViewer(QMainWindow):
 
         # A connected-components result belongs to the OLD image - reset it here so it
         # doesn't linger and get wrongly displayed over unrelated new data.
-
+        self.cc_result = None
         self.cc_labels_data = None
         self.cc_color_lut = None
         self.show_cc_colors = False
@@ -1345,7 +1390,7 @@ class ImageViewer(QMainWindow):
         result_window = MinkowskiResultsDialog(result, unit, is_3d, self)
         result_window.show()
 
-
+##------------------------------connected components--------------------------------------------
     def open_connected_components_dialog(self):
         """Open the connected-components settings dialog and run labeling on the current image."""
 
@@ -1365,21 +1410,14 @@ class ImageViewer(QMainWindow):
         if dialog.exec() != QDialog.Accepted:
             return # user cancelled
 
-        # Stash the settings now - the thread's finished signal only carries the
-        # result dict, not the settings that produced it (same reasoning as
-        # self._minkowski_evolution_unit etc. in open_minkowski_evolution_dialog).
-
-        self._cc_unit = dialog.get_unit()
-        self._cc_min_size = dialog.get_min_size()
-        self._cc_is_3d = is_3d
+        self._cc_is_3d = is_3d # stashed for open_measurements_dialog's is_3d branching later
 
         self.progress_bar.setVisible(True)
         self.status_bar.showMessage(f"Labeling connected components (connectivity={dialog.get_connectivity()})...")
         QApplication.processEvents()
 
         self.cc_thread = ConnectedComponentsThread(
-            self.current_image_data, connectivity=dialog.get_connectivity(),
-            resolution=dialog.get_resolution(), is_3d=is_3d
+            self.current_image_data, connectivity=dialog.get_connectivity(), is_3d=is_3d
         )
 
         self.cc_thread.finished.connect(self.on_connected_components_finished)
@@ -1387,38 +1425,19 @@ class ImageViewer(QMainWindow):
         self.cc_thread.start()
 
     def on_connected_components_finished(self, result:dict):
-        """Handle completion of connected-components labeling - filter by min size and show results."""
-
+        """Handle completion of connected-components labeling - store the result and
+        color every component (no filtering or measurements yet - those happen in the
+        Measurements step, which needs this result to already exist)."""
 
         self.progress_bar.setVisible(False)
-        table =  result['table']
-        total_components = result['num_components']
+        self.cc_result = result
 
-        # min-size filtering happens here, not inside connected_components_2d/3d -
-        # it's a display/reporting choice, not part of the labeling itself.
-
-        count_col = 'voxel_count' if self._cc_is_3d else 'pixel_count'
-        filtered_table = table[table[count_col] >= self._cc_min_size].reset_index(drop=True)
-
-        result_window = ConnectedComponentsResultsDialog(
-            filtered_table, self._cc_unit, self._cc_is_3d, total_components, self
-        )
-        result_window.show()
-
-        # Zero out components the min-size filter dropped, so they don't
-        # clutter the colored view either - keeps it consistent with what
-        # the results table actually reports. Works the same for a 2D label
-        # array or a 3D one - fancy indexing doesn't care about rank.
         labels = result['labels']
-        keep = np.zeros(int(labels.max()) + 1, dtype=bool)
-        keep[filtered_table['label'].to_numpy()] = True
-        labels_for_display = np.where(keep[labels], labels, 0)
-
-        self.cc_labels_data = labels_for_display
-        n_labels = int(labels_for_display.max())
+        n_labels = int(labels.max())
         rng = np.random.default_rng(0)
         colors = (rng.random((n_labels + 1, 3)) * 255).astype(np.uint8)
         colors[0] = 0  # background stays black
+        self.cc_labels_data = labels
         self.cc_color_lut = colors
 
         self.cc_color_checkbox.setVisible(True)
@@ -1426,10 +1445,9 @@ class ImageViewer(QMainWindow):
         self.show_cc_colors = True
         self.display_current_slice()
 
-
-
-
-        self.status_bar.showMessage(f"Connected components: {total_components} found, {len(filtered_table)} shown")
+        self.status_bar.showMessage(
+            f"Connected components: {result['num_components']} found -"
+            f"run Image Analysis > Measurements... to filter/measure them")
 
     def on_connected_components_error(self, error_msg: str):
         """Handle error during connected-components labeling."""
@@ -1438,12 +1456,97 @@ class ImageViewer(QMainWindow):
         QMessageBox.critical(self, "Connected Components Error", f"Error labeling components:\n{error_msg}")
         self.status_bar.showMessage(f"Error: {error_msg}")
 
+    def open_measurements_dialog(self):
+        """Open the measurements settings dialog and run measurements on the last
+        connected-components result."""
+
+        if self.cc_result is None:
+            QMessageBox.warning(
+                self, "No Connected Components Result",
+                "Please run Image Analysis > Connected Components... first."
+                )
+            return
+
+        dialog = MeasurementsSettingsDialog(
+            is_3d=self._cc_is_3d, num_components=self.cc_result['num_components'], parent=self
+        )
+
+        if dialog.exec() != QDialog.Accepted:
+            return  # user cancelled
+
+        self._measurements_unit = dialog.get_unit()
+        self._measurements_min_size = dialog.get_min_size()
+        self._measurements_selected = dialog.get_selected_measurements()
+
+        self.progress_bar.setVisible(True)
+        self.status_bar.showMessage("Computing measurements...")
+        QApplication.processEvents()
+
+        self.measurements_thread = MeasurementsThread(self.cc_result, self._cc_is_3d, dialog.get_resolution())
+        self.measurements_thread.finished.connect(self.on_measurements_finished)
+        self.measurements_thread.error.connect(self.on_measurements_error)
+        self.measurements_thread.start()
+
+    def on_measurements_finished(self, merged_table):
+        """Handle completion of the measurement step - filter by min size, keep only
+        the selected measurement columns, refresh the colored view, and show results."""
+
+        self.progress_bar.setVisible(False)
+
+        count_col = 'voxel_count' if self._cc_is_3d else 'pixel_count'
+        measure_col = 'volume' if self._cc_is_3d else 'area'
+        total_components = self.cc_result['num_components']
+
+        filtered_table = merged_table[merged_table[count_col] >= self._measurements_min_size].reset_index(drop=True)
+        display_table = filtered_table[['label', count_col, measure_col] + self._measurements_selected]
+
+        # Refresh the colored view to match what the table now reports - same
+        # LUT-masking trick used before, just living here now instead of the CC
+        # step, since min_size didn't exist yet at that point.
+        labels = self.cc_result['labels']
+        keep = np.zeros(int(labels.max()) + 1, dtype=bool)
+        keep[filtered_table['label'].to_numpy()] = True
+        labels_for_display = np.where(keep[labels], labels, 0)
+
+        self.cc_labels_data = labels_for_display
+        n_labels = int(labels_for_display.max())
+        rng = np.random.default_rng(0)
+        colors = (rng.random((n_labels + 1, 3)) * 255).astype(np.uint8)
+        colors[0] = 0
+        self.cc_color_lut = colors
+        self.show_cc_colors = True
+        self.cc_color_checkbox.setChecked(True)
+        self.display_current_slice()
+
+        # Show the results table in a new dialog
+        result_window = ConnectedComponentsResultsDialog(
+            display_table, self._measurements_unit, self._cc_is_3d, total_components, self
+        )
+
+        result_window.show()
+        self.status_bar.showMessage(f"Measurements: {total_components} components found - {len(display_table)} shown")
+
+    def on_measurements_error(self, error_msg: str):
+        """Handle error during the measurement step."""
+        self.progress_bar.setVisible(False)
+        QMessageBox.critical(self, "Measurements Error", f"Error computing measurements:\n{error_msg}")
+        self.status_bar.showMessage(f"Error: {error_msg}")
+
+
+
+
+
+
+
+
+
+
+
+
+
 
     
-
-
-
-    
+    ##------------------------------polytope calculation--------------------------------------------
     def on_polytope_calculation_finished(self, raw_curves: dict, scaled_curves: dict):
         """Handle completion of polytope calculation.
         (Real plot window comes in the next step - for now just confirm it worked.)

@@ -18,6 +18,26 @@ class ConnectedComponentsResultsDialog(QDialog):
     while comparing against the image or running another calculation.
     """
 
+    # Column -> unit exponent, for measurements that carry a physical unit
+    # (1 = length, -1 = 1/length). A column absent from this dict is treated as
+    # dimensionless - no unit suffix shown. List-driven so a future unit-bearing
+    # measurement (e.g. surface_area) is one new entry, not new UI code.
+    _MEASUREMENT_UNIT_EXPONENTS = {
+        'equivalent_diameter': 1,
+        'perimeter': 1,
+        'specific_perimeter': -1,
+    }
+
+    # Maps an exponent to its Unicode superscript suffix, so a unit string can be
+    # built like f"{unit}{_SUPERSCRIPTS[exponent]}" -> "um", "um2", "um-1", etc.
+    # Negative exponents combine two characters: the superscript minus sign with
+    # the superscript digit (1/2/3). No suffix needed for exponent 1 - a plain
+    # length reads as "um", not "um1".
+    _SUPERSCRIPTS = {1: '', -1: '\u207b\u00b9', 2: '\u00b2', -2: '\u207b\u00b2', 3: '\u00b3', -3: '\u207b\u00b3'}
+
+
+
+
     def __init__(self, table, unit: str, is_3d: bool, total_components:int, parent = None):
         super().__init__(parent)
 
@@ -29,13 +49,14 @@ class ConnectedComponentsResultsDialog(QDialog):
         # (pixel_count/area vs voxel_count/volume) - is_3d picks which pair
         # of column names and display labels this dialog should use.
 
+        self.unit = unit
         self.count_col = 'voxel_count' if is_3d else 'pixel_count'
         self.measure_col = 'volume' if is_3d else 'area'
         count_label = 'Voxel count' if is_3d else 'Pixel count'
         measure_label = f"Volume ({unit}\u00b3)" if is_3d else f"Area ({unit}\u00b2)"
 
         self.setWindowTitle("Connected Components Results")
-        self.setMinimumWidth(480)
+        self.setMinimumWidth(700)
         self._setup_ui(total_components, count_label, measure_label)
 
     def _setup_ui(self, total_components, count_label, measure_label):
@@ -50,10 +71,32 @@ class ConnectedComponentsResultsDialog(QDialog):
         summary = QLabel(f"{total_components} components found - {shown} shown after filtering below")
         layout.addWidget(summary)
 
-        # 3 columns: Label, raw element count, physical measure. Row count is
-        # fixed up front since we already know exactly how many rows there'll b
-        table = QTableWidget(shown, 3)
-        table.setHorizontalHeaderLabels(['Label', count_label, measure_label])
+        # Show every column actually present in the table, not just label/count/measure -
+        # this way, checking/unchecking measurements in MeasurementsSettingsDialog just
+        # changes what shows up here, with no changes needed to this dialog.
+
+        known_labels = {'label': 'Label', self.count_col: count_label, self.measure_col: measure_label}
+        columns = list(self.table_data.columns)
+        # headers = [known_labels.get(col, col.replace('_', ' ').title()) for col in columns]
+        # adding units for all the measuremetns headers in the resulting table
+        headers = []
+        for col in columns:
+            if col in known_labels:
+                headers.append(known_labels[col])
+                continue
+            label = col.replace('_', ' ').title()
+            exponent = self._MEASUREMENT_UNIT_EXPONENTS.get(col)
+            if exponent is not None:
+                label+= f" ({self.unit}{self._SUPERSCRIPTS[exponent]})"
+            headers.append(label)
+
+        # Kept for _export_csv, so the CSV gets the same unit-labeled headers
+        # shown on screen instead of the raw DataFrame column names.
+        self.columns = columns
+        self.headers = headers
+
+        table = QTableWidget(shown, len(columns))
+        table.setHorizontalHeaderLabels(headers)
         table.horizontalHeader().setStretchLastSection(True) # last column fills leftover width
         table.verticalHeader().setVisible(False)               # no numbered row headers needed
         table.setEditTriggers(QAbstractItemView.NoEditTriggers)  # read-only results, not an editable grid
@@ -65,11 +108,10 @@ class ConnectedComponentsResultsDialog(QDialog):
         # depends on is_3d.
         for row, record in enumerate(self.table_data.itertuples(index=False)):
             record = record._asdict()  # convert namedtuple to dict for easier access by column name
-            table.setItem(row, 0, QTableWidgetItem(str(int(record['label']))))
-            # counts come back as float64 (regionprops_table's default) but
-            # are always whole numbers, so format with no decimal places.
-            table.setItem(row, 1, QTableWidgetItem(f"{record[self.count_col]:.0f}"))
-            table.setItem(row, 2, QTableWidgetItem(f"{record[self.measure_col]:.6g}"))
+            for col_idx, col in enumerate(columns):
+                text = str(int(record[col])) if col == 'label' else f"{record[col]:.4g}"
+                table.setItem(row, col_idx, QTableWidgetItem(text))
+
 
         self.table = table
         layout.addWidget(table)
@@ -100,10 +142,15 @@ class ConnectedComponentsResultsDialog(QDialog):
             file_path += '.csv'
 
         try:
-            # table_data is already a DataFrame - pandas writes the CSV
-            # directly, no need to hand-loop rows with csv.writer.
-            # index=False: don't also write pandas' own 0..N row index.
-            self.table_data.to_csv(file_path, index=False)
+            # Export with the same unit-labeled headers shown on screen, not
+            # the raw DataFrame column names. table_data itself is untouched -
+            # rename() returns a new DataFrame, index=False skips pandas' own
+            # 0..N row index.
+            export_table = self.table_data.rename(columns=dict(zip(self.columns, self.headers)))
+            # utf-8-sig adds a UTF-8 BOM - without it, Excel doesn't auto-detect
+            # UTF-8 for a plain .csv and misreads the unit symbols (mu, superscripts)
+            # as Windows-1252, garbling them into things like "Âµm".
+            export_table.to_csv(file_path, index=False, encoding='utf-8-sig')
             remember_save_dir(file_path)  # so the next Save dialog opens in this same folder
             QMessageBox.information(self, "Success", f"Data exported to:\n{file_path}")
         except Exception as e:

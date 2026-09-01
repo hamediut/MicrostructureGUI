@@ -109,6 +109,20 @@ def connected_components_3d(image: np.ndarray, connectivity: int = 26, res: floa
         size_exponent=3, count_col='voxel_count', measure_col='volume',
     )
 
+def _safe_prop(region, name):
+    """Some regionprops properties (axis_major_length/axis_minor_length in
+    particular) can raise ValueError('math domain error') for degenerate
+    components - e.g. one only a single voxel/pixel thick along an axis,
+    common among the tiny segmentation speckle a min-size filter is meant to
+    catch. Returns NaN instead of letting one bad component crash the whole
+    measurement pass.
+    """
+    try:
+        return getattr(region, name)
+    except ValueError:
+        return np.nan
+
+
 def compute_shape_measurements(labels: np.ndarray, is_3d: bool, res: float = 1.0)-> pd.DataFrame:
     """Compute per-component shape measurements available directly from
     skimage's regionprops - no custom surface reconstruction or eigenvector
@@ -129,15 +143,15 @@ def compute_shape_measurements(labels: np.ndarray, is_3d: bool, res: float = 1.0
     rows = []
     for region in regionprops(labels):
         row = {'label': region.label}
-        row['equivalent_diameter'] = region.equivalent_diameter * res
+        row['equivalent_diameter'] = _safe_prop(region, 'equivalent_diameter') * res
 
         # axis_major_length/axis_minor_length are native in both 2D and 3D.
-        major_length = region.axis_major_length * res
-        minor_length = region.axis_minor_length * res
+        major_length = _safe_prop(region, 'axis_major_length') * res
+        minor_length = _safe_prop(region, 'axis_minor_length') * res
         row['aspect_ratio'] = major_length / minor_length if minor_length > 0 else np.nan
 
         if not is_3d:
-            perimeter = region.perimeter * res
+            perimeter = _safe_prop(region, 'perimeter') * res
             area = region.area * res ** 2
             row['perimeter'] = perimeter
 

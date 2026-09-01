@@ -1,18 +1,19 @@
 """
-Dialog for connected-components calculation settings.
+Dialog for connected-components labeling settings.
 """
 
 from PySide6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QDoubleSpinBox, QSpinBox, QComboBox, QPushButton, QGroupBox, QFormLayout
+    QComboBox, QPushButton, QGroupBox, QFormLayout
 )
 
 class ConnectedComponentsSettingsDialog(QDialog):
 
     """
     Dialog to configure connected-components labeling for the current 2D or
-    3D image. Same QFormLayout numeric-dialog pattern as MinkowskiSettingsDialog,
-    plus a connectivity choice and a minimum-size filter.
+    3D image. Just the connectivity choice here. Voxel size, unit, and minimum
+    size now live in MeasurementsSettingsDialog, since labeling itself
+    doesn't need physical units, only the measurement step that follows it.
     """
 
     def __init__(self, is_3d: bool = True, parent = None):
@@ -20,14 +21,7 @@ class ConnectedComponentsSettingsDialog(QDialog):
 
 
         self.is_3d = is_3d
-
-        # will hold the chosen values after OK - same convention as
-        # MinkowskiSettingsDialog's self.resolution/self.unit
-
         self.connectivity = None
-        self.resolution = None
-        self.unit = None
-        self.min_size = None
 
         self.setWindowTitle("Connected Components Settings")
         self.setModal(True)
@@ -39,12 +33,10 @@ class ConnectedComponentsSettingsDialog(QDialog):
         layout = QVBoxLayout(self)
 
         dims = "3D volume" if self.is_3d else "2D image"
-        count_unit = "voxel" if self.is_3d else "pixel"
-        measure_word = "volume" if self.is_3d else "area"
 
         info_label = QLabel(
             f"Label connected components of the foreground phase (value 1) "
-            f"in this {dims} and measure each one's {measure_word}."
+            f"in this {dims}."
         )
 
         info_label.setWordWrap(True)
@@ -73,32 +65,6 @@ class ConnectedComponentsSettingsDialog(QDialog):
                     )
         form_layout.addRow("Connectivity:", self.connectivity_combo)
 
-        self.resolution_spinbox = QDoubleSpinBox()
-        self.resolution_spinbox.setRange(0.0001, 100000.0)
-        self.resolution_spinbox.setDecimals(4)
-        self.resolution_spinbox.setValue(1.0)
-        self.resolution_spinbox.setToolTip(
-            f"Physical size of one {count_unit} (isotropic). Scales {count_unit} counts "
-            f"into physical {measure_word}s - leave at 1.0 for results in {count_unit} units."
-        )
-        form_layout.addRow(f"{count_unit.capitalize()} size:", self.resolution_spinbox)
-
-        self.unit_combo = QComboBox()
-        self.unit_combo.addItems(['\u00b5m', 'mm', 'nm', 'voxels'])
-        form_layout.addRow("Unit:", self.unit_combo)
-
-        # Real segmented volumes are full of 1-2 voxel speckle components -
-        # see the notebook's size-distribution histogram (3156 of 5902
-        # components on the test volume were <= 5 voxels).
-        self.min_size_spinbox = QSpinBox()
-        self.min_size_spinbox.setRange(1, 10_000_000)
-        self.min_size_spinbox.setValue(1)
-        self.min_size_spinbox.setToolTip(
-            f"Components smaller than this (in {count_unit}s) are dropped from the "
-            f"results table."
-        )
-        form_layout.addRow(f"Minimum size ({count_unit}s):", self.min_size_spinbox)
-
         settings_group.setLayout(form_layout)
         layout.addWidget(settings_group)
 
@@ -116,22 +82,10 @@ class ConnectedComponentsSettingsDialog(QDialog):
 
     def _accept(self):
         self.connectivity = int(self.connectivity_combo.currentText().split()[0])
-        self.resolution = self.resolution_spinbox.value()
-        self.unit = self.unit_combo.currentText()
-        self.min_size = self.min_size_spinbox.value()
         self.accept()
 
     def get_connectivity(self):
         return self.connectivity
-
-    def get_resolution(self):
-        return self.resolution
-
-    def get_unit(self):
-        return self.unit
-
-    def get_min_size(self):
-        return self.min_size
 
 
 
