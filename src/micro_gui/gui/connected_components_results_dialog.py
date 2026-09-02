@@ -9,6 +9,10 @@ from PySide6.QtWidgets import (
 
 from .save_dialog_helper import suggested_save_path, remember_save_dir
 
+import numpy as np
+from .histogram_plot_window import HistogramPlotWindow
+from .histogram_settings_dialog import HistogramSettingsDialog
+
 
 class ConnectedComponentsResultsDialog(QDialog):
     """
@@ -54,6 +58,9 @@ class ConnectedComponentsResultsDialog(QDialog):
         self.measure_col = 'volume' if is_3d else 'area'
         count_label = 'Voxel count' if is_3d else 'Pixel count'
         measure_label = f"Volume ({unit}\u00b3)" if is_3d else f"Area ({unit}\u00b2)"
+
+        #for plotting histogram of the measure column
+        self.selected_column_index = None
 
         self.setWindowTitle("Connected Components Results")
         self.setMinimumWidth(700)
@@ -113,11 +120,21 @@ class ConnectedComponentsResultsDialog(QDialog):
                 table.setItem(row, col_idx, QTableWidgetItem(text))
 
 
+        # Clicking a column header selects that column for histogram plotting.
+        table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
+
         self.table = table
         layout.addWidget(table)
 
         # Save/Close buttons, right-aligned via the stretch placed before them.
         button_layout = QHBoxLayout()
+
+        self.histogram_button = QPushButton("Histogram")
+        self.histogram_button.setEnabled(False)  # enabled once a column is selected by clicking its header
+        self.histogram_button.setToolTip("Click a column header below to select it, then click here to plot its histogram.")
+        self.histogram_button.clicked.connect(self._show_histogram)
+
+
         save_button = QPushButton("Save to CSV...")
         save_button.clicked.connect(self._export_csv)
 
@@ -125,10 +142,45 @@ class ConnectedComponentsResultsDialog(QDialog):
         close_button.clicked.connect(self.close)
 
         button_layout.addStretch()
+        button_layout.addWidget(self.histogram_button)
         button_layout.addWidget(save_button)
         button_layout.addWidget(close_button)
         layout.addLayout(button_layout)
 
+    def _on_header_clicked(self, column_index):
+            
+            """Select a column by clicking its header - highlights it and enables the Histogram button."""
+
+            self.selected_column_index = column_index
+            self.table.selectColumn(column_index)
+            self.histogram_button.setEnabled(True)
+            self.histogram_button.setText(f"Histogram: {self.headers[column_index]}")
+
+
+    def _show_histogram(self):
+
+        column_name = self.columns[self.selected_column_index]
+        if column_name == 'label':
+            QMessageBox.warning(self, "Not a Measurement", "Label is just a component ID, not a measurement - select a different column.")
+            return
+
+        values = self.table_data[column_name].to_numpy(dtype=float)
+        values = values[~np.isnan(values)]  # degenerate components can produce NaN (see _safe_prop)
+        if len(values) == 0:
+            QMessageBox.warning(self, "No Data", "Every value in this column is NaN - nothing to plot.")
+            return
+
+        column_label = self.headers[self.selected_column_index]
+        settings_dialog = HistogramSettingsDialog(column_label, self)
+        if settings_dialog.exec() != QDialog.Accepted:
+            return  # user cancelled
+
+        window = HistogramPlotWindow(
+            values, column_label,
+            settings_dialog.get_percentile(), settings_dialog.get_num_bins(), settings_dialog.get_log_y(),
+            self
+        )
+        window.show()
 
     def _export_csv(self):
         file_path, _ = QFileDialog.getSaveFileName(
